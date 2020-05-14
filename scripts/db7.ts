@@ -1,10 +1,13 @@
 import enabledModules from '../src/modules'
 const program = require('commander')
 const config = require('config')
-const common = require('../migrations/.common')
-const es = require('../packages/lib/elastic')
+const es = require('@storefront-api/lib/elastic')
 const { aggregateElasticSearchSchema } = require('../packages/lib/module/index')
 const aggregatedSchema = aggregateElasticSearchSchema(enabledModules, { config })
+
+const getElasticClient = function () {
+  return es.getClient(config)
+}
 
 program
   .command('rebuild')
@@ -15,6 +18,8 @@ program
       process.exit(1);
     }
 
+    const db = getElasticClient()
+
     let waitingCounter = 0
     for (var collectionName in aggregatedSchema.schemas) {
       console.log('** Hello! I am going to rebuild EXISTING ES index to fix the schema')
@@ -22,25 +27,25 @@ program
       const tempIndex = originalIndex + '_' + Math.round(+new Date() / 1000)
 
       console.log(`** Creating temporary index ${tempIndex}`)
-      es.createIndex(common.db, tempIndex, aggregatedSchema.schemas[collectionName], (err) => {
+      es.createIndex(db, tempIndex, aggregatedSchema.schemas[collectionName], (err) => {
         if (err) {
           console.log(err)
         }
 
         console.log(`** We will reindex ${originalIndex} with the current schema`)
-        es.reIndex(common.db, originalIndex, tempIndex, (err) => {
+        es.reIndex(db, originalIndex, tempIndex, (err) => {
           if (err) {
             console.log(err)
           }
 
           console.log('** Removing the original index')
-          es.deleteIndex(common.db, originalIndex, (err) => {
+          es.deleteIndex(db, originalIndex, (err) => {
             if (err) {
               console.log(err)
             }
 
             console.log('** Creating alias')
-            es.putAlias(common.db, tempIndex, originalIndex, (err) => {
+            es.putAlias(db, tempIndex, originalIndex, (err) => {
               waitingCounter++
             })
           })
@@ -61,12 +66,14 @@ program
       process.exit(1);
     }
 
+    const db = getElasticClient()
+
     console.log('** Hello! I am going to create NEW ES index')
     const indexName = cmd.indexName
 
     let waitingCounter = 0
     for (var collectionName in aggregatedSchema.schemas) {
-      es.createIndex(common.db, indexName + '_' + collectionName, aggregatedSchema.schemas[collectionName], (err) => {
+      es.createIndex(db, indexName + '_' + collectionName, aggregatedSchema.schemas[collectionName], (err) => {
         if (err) {
           console.log(err)
         }
